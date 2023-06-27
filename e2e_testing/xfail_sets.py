@@ -806,6 +806,8 @@ STABLEHLO_PASS_SET = {
 # Write the TOSA set as a "passing" set as it is very early in development
 # and very few tests work yet.
 TOSA_PASS_SET = {
+    "SliceCopy2DStaticModule",
+    "IndexPutImpl2DNoneIndexStaticModule",
     "AliasModule_basic",
     "MaxPool2dEmptyStrideStaticModule_basic",
     "ConstantBoolParameterModule_basic",
