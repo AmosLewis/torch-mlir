@@ -14,6 +14,20 @@ using namespace mlir;
 using namespace mlir::torch;
 using namespace mlir::torch::onnx_c;
 
+static Value createConstantIntList(OpBinder binder,
+                                   ConversionPatternRewriter &rewriter,
+                                   SmallVector<int64_t> cstInput) {
+  SmallVector<Value> cstValue;
+  for (int64_t i : cstInput) {
+    cstValue.push_back(rewriter.create<Torch::ConstantIntOp>(
+        binder.getLoc(), rewriter.getI64IntegerAttr(i)));
+  }
+  return rewriter.create<Torch::PrimListConstructOp>(
+      binder.getLoc(),
+      Torch::ListType::get(Torch::IntType::get(binder.op->getContext())),
+      cstValue);
+}
+
 // Simple rewrites for the default domain.
 // See: https://onnx.ai/onnx/operators/
 // For operators that are effectively version invariant, we register with
@@ -410,6 +424,48 @@ void mlir::torch::onnx_c::populateDefaultDomainGtoP(
         }
         return failure();
       });
+  patterns.onOp("LayerNormalization", 17,
+                [](OpBinder binder, ConversionPatternRewriter &rewriter) {
+                  Torch::ValueTensorType resultType;
+                  Value input, weight, bias;
+                  int64_t axis, stashType;
+                  float eps;
+
+                  if (binder.tensorOperandAtIndex(input, 0) ||
+                      binder.tensorOperandAtIndex(weight, 1) ||
+                      binder.tensorOperandAtIndex(bias, 2) ||
+                      binder.s64IntegerAttr(axis, "axis", -1) ||
+                      binder.f32FloatAttr(eps, "epsilon", 1e-05f) ||
+                      binder.s64IntegerAttr(stashType, "stash_type", 1) ||
+                      binder.tensorResultType(resultType))
+                    return failure();
+                  if (stashType != 1)
+                    return rewriter.notifyMatchFailure(
+                        binder.op, "stash_type setting is not supported.");
+
+                  // conver onnx axis to torch normalized_shape
+                  SmallVector<int64_t> normalizedShape;
+                  auto inputTy =
+                      input.getType().template cast<RankedTensorType>();
+                  int64_t inputRank = inputTy.getRank();
+                  axis = Torch::toPositiveDim(axis, inputRank);
+                  auto selfShape = Torch::makeShapeTorchCompatible(inputTy.getShape());
+                  for (int64_t i = axis; i < inputRank; i++)
+                    normalizedShape.push_back(selfShape[i]);
+                  Value normalizedShapeList =
+                      createConstantIntList(binder, rewriter, normalizedShape);
+
+                  Value cstFalse = rewriter.create<Torch::ConstantBoolOp>(
+                      binder.getLoc(), false);
+                  Value cstEps = rewriter.create<Torch::ConstantFloatOp>(
+                      binder.getLoc(), rewriter.getF64FloatAttr(eps));
+
+                  rewriter.replaceOpWithNewOp<Torch::AtenLayerNormOp>(
+                      binder.op, resultType, input, normalizedShapeList, weight,
+                      bias, cstEps,
+                      /*cudnn_enabled=*/cstFalse);
+                  return success();
+                });
   patterns.onOp("LeakyRelu", 1,
                 [](OpBinder binder, ConversionPatternRewriter &rewriter) {
                   Torch::ValueTensorType resultType;
