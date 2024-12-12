@@ -6430,3 +6430,92 @@ class AtenNonzero1DModule(torch.nn.Module):
 @register_test_case(module_factory=lambda: AtenNonzero1DModule())
 def AtenNonzero1DModule_one_nonzero(module, tu: TestUtils):
     module.forward(torch.tensor([0, 0, 1, 1, 0, 0], dtype=torch.int))
+
+
+class NonzeroDecomposeModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @export
+    @annotate_args(
+        [
+            None,
+            ([-1], torch.int, True),
+        ]
+    )
+    def forward(self, t):
+        t_flat = t.flatten()
+        nonzero_mask = t_flat != 0
+        destination_indices = torch.cumsum(nonzero_mask, 0) - 1
+        destination_indices_clamp = torch.clamp(destination_indices, min=0)
+        iota = torch.arange(t_flat.size(0)) * nonzero_mask
+        scatter_self = torch.zeros_like(t_flat, dtype=torch.int64)
+        # compacted = scatter_self.scatter_(
+        #     dim=0,
+        #     index=destination_indices_clamp,
+        #     src=iota,
+        #     reduce='add'
+        # )
+        compacted = torch.scatter_add(
+            scatter_self, dim=0, index=destination_indices_clamp, src=iota
+        )
+        result_flat = compacted[: torch.sum(nonzero_mask)]
+
+        # multi dim
+        original_shape = t.shape
+        input_shape_tensor = torch.tensor(original_shape)
+        strides = torch.cumprod(torch.flip(input_shape_tensor, [0]), 0).flip(0)
+        a = strides[1:]
+        b = torch.tensor([1])
+
+        return torch.cat([a, b])
+        # strides = torch.cat(a, b])
+        # multi_indices = (result_flat.unsqueeze(1) // strides.unsqueeze(0)) % input_shape_tensor
+        # return multi_indices
+
+
+@register_test_case(module_factory=lambda: NonzeroDecomposeModule())
+def NonzeroDecomposeModule_basic(module, tu: TestUtils):
+    module.forward(torch.tensor([0, 0, 1, 1, 0, 0], dtype=torch.int))
+
+
+class NonzeroFlattenDynamicModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @export
+    @annotate_args(
+        [
+            None,
+            ([-1], torch.int, True),
+        ]
+    )
+    def forward(self, x):
+        return x.flatten()
+
+
+@register_test_case(module_factory=lambda: NonzeroFlattenDynamicModule())
+def NonzeroFlattenDynamicModule_basic(module, tu: TestUtils):
+    module.forward(torch.tensor([0, 0, 1, 1, 0, 0], dtype=torch.int))
+
+
+class NonzeroCatModule(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    @export
+    @annotate_args(
+        [
+            None,
+            ([-1], torch.int, True),
+        ]
+    )
+    def forward(self, a):
+        a = a[1:]
+        b = torch.tensor([1])
+        return torch.cat([a, b])
+
+
+@register_test_case(module_factory=lambda: NonzeroCatModule())
+def NonzeroCatModule_basic(module, tu: TestUtils):
+    module.forward(torch.tensor([6], dtype=torch.int))

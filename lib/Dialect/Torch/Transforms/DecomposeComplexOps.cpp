@@ -5814,7 +5814,8 @@ class DecomposeAtenNonzeroOp : public OpRewritePattern<AtenNonzeroOp> {
 
     // // DEBUG one dimentional result.
     // auto unsqueezedResultType = ValueTensorType::get(
-    //     rewriter.getContext(), SmallVector<int64_t>{kUnknownSize, 1}, si64Type);
+    //     rewriter.getContext(), SmallVector<int64_t>{kUnknownSize, 1},
+    //     si64Type);
     // Value unsqueezedResult = rewriter.create<AtenUnsqueezeOp>(
     //     loc, unsqueezedResultType, slicedResult, constantZero);
     // rewriter.replaceOp(op, unsqueezedResult);
@@ -5849,11 +5850,10 @@ class DecomposeAtenNonzeroOp : public OpRewritePattern<AtenNonzeroOp> {
         /*dim*/ constantZero,
         /*start=*/constantOne, /*end=*/strideSliceEnd, /*step=*/constantOne);
     // torch.tensor([1])
-    auto oneTensorType = ValueTensorType::get(
-        rewriter.getContext(), SmallVector<int64_t>{1}, si64Type);
+    auto oneTensorType = ValueTensorType::get(rewriter.getContext(),
+                                              SmallVector<int64_t>{}, si64Type);
     Value oneTensor = rewriter.create<AtenScalarTensorOp>(
-        loc, oneTensorType, constantOne, si64Dtype, noneCst, noneCst,
-        noneCst);
+        loc, oneTensorType, constantOne, si64Dtype, noneCst, noneCst, noneCst);
     // torch.cat
     auto tensorListElementType = Torch::ValueTensorType::get(
         rewriter.getContext(), SmallVector<int64_t>{kUnknownSize}, si64Type);
@@ -5861,14 +5861,12 @@ class DecomposeAtenNonzeroOp : public OpRewritePattern<AtenNonzeroOp> {
         loc, Torch::ListType::get(tensorListElementType),
         SmallVector<Value>{slicedStrides, oneTensor});
     Value strides = rewriter.create<Torch::AtenCatOp>(loc, shapeType,
-                                                      tensorList,
-                                                      constantZero);
+                                                      tensorList, constantZero);
 
     // multi_indices = (result_flat.unsqueeze(1) // strides.unsqueeze(0)) %
     // input_shape_tensor
     auto unsqueezedResultType = ValueTensorType::get(
-        rewriter.getContext(), SmallVector<int64_t>{kUnknownSize, 1},
-        si64Type);
+        rewriter.getContext(), SmallVector<int64_t>{kUnknownSize, 1}, si64Type);
     Value unsqueezedResult = rewriter.create<AtenUnsqueezeOp>(
         loc, unsqueezedResultType, slicedResult, constantOne);
 
